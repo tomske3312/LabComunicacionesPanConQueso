@@ -1,0 +1,161 @@
+clc;
+close all;
+clear all;
+
+%% Pre-actividad
+% Definición de parámetros
+f0 = 1; % Ancho de banda de 6dB normalizado
+alpha_values = [0, 0.25, 0.7, 1]; % Factores de roll-off
+Ts = 1/(2*f0); % Periodo de símbolo (basado en el criterio de Nyquist)
+t_max = 6 * Ts; % Tiempo máximo para graficar la respuesta al impulso (varios periodos de símbolo)
+dt = Ts / 100; % Paso de tiempo
+t = 0:dt:t_max; % Vector de tiempo (t >= 0)
+
+max_B = f0 * (1 + max(alpha_values)); % Máximo ancho de banda absoluto
+f_max = 2 * max_B; % Frecuencia máxima para graficar
+df = f_max / 500; % Paso de frecuencia
+f = -f_max:df:f_max; % Vector de frecuencia
+
+figure;
+
+% --- Gráfica de Respuesta en Frecuencia (He(f)) ---
+subplot(2, 1, 1);
+hold on;
+legends_freq = {};
+
+for i = 1:length(alpha_values)
+    alpha = alpha_values(i);
+    f_delta = alpha * f0;
+    f1 = f0 - f_delta;
+    B = f0 + f_delta; % Ancho de banda absoluto
+
+    He = zeros(size(f));
+
+    if alpha == 0 % Caso ideal (Rectangular)
+        idx = find(abs(f) < f0);
+        He(idx) = 1;
+        % En las discontinuidades f= +/- f0, el valor es 0.5 teóricamente
+        idx_edge = find(abs(abs(f) - f0) < df/2);
+         He(idx_edge) = 0.5;
+    else % Caso Coseno Alzado (alpha > 0)
+        % Parte plana |f| < f1
+        idx1 = find(abs(f) < f1);
+        He(idx1) = 1;
+
+        % Parte coseno |f| >= f1 y |f| <= B
+        idx2 = find(abs(f) >= f1 & abs(f) <= B);
+        He(idx2) = 0.5 * (1 + cos(pi * (abs(f(idx2)) - f1) / (2 * f_delta)));
+
+        % Parte cero |f| > B (ya inicializado a cero)
+    end
+
+    plot(f, He, 'LineWidth', 1.5);
+    legends_freq{end+1} = ['\alpha = ' num2str(alpha)];
+end
+
+title('Respuesta en Frecuencia H_e(f) (Coseno Alzado)');
+xlabel('Frecuencia (f / f_0)');
+ylabel('Magnitud |H_e(f)|');
+grid on;
+legend(legends_freq);
+xlim([-f_max, f_max]);
+ylim([-0.1, 1.1]);
+hold off;
+
+% --- Gráfica de Respuesta al Impulso (he(t)) ---
+subplot(2, 1, 2);
+hold on;
+legends_imp = {};
+
+% Pequeño valor para evitar división por cero en t=0 y t = 1/(4*f_delta)
+epsilon = 1e-9; 
+
+for i = 1:length(alpha_values)
+    alpha = alpha_values(i);
+    f_delta = alpha * f0;
+    he = zeros(size(t));
+
+    % Calcular he(t) usando la Ecuación 14
+    % Se tratan los casos especiales numéricamente o con límites
+
+    % Término Sinc: sin(2*pi*f0*t) / (2*pi*f0*t)
+    term1 = zeros(size(t));
+    idx_t_nonzero = find(abs(2*pi*f0*t) > epsilon);
+    term1(idx_t_nonzero) = sin(2*pi*f0*t(idx_t_nonzero)) ./ (2*pi*f0*t(idx_t_nonzero));
+    idx_t_zero = find(abs(2*pi*f0*t) <= epsilon);
+    term1(idx_t_zero) = 1; % Límite cuando t -> 0
+
+    if alpha == 0 % Caso ideal (Sinc)
+       he = 2 * f0 * term1;
+    else % Caso Coseno Alzado (alpha > 0)
+        % Término Coseno: cos(2*pi*f_delta*t) / (1 - (4*f_delta*t)^2)
+        term2 = zeros(size(t));
+        den = 1 - (4*f_delta*t).^2;
+        idx_den_nonzero = find(abs(den) > epsilon);
+        term2(idx_den_nonzero) = cos(2*pi*f_delta*t(idx_den_nonzero)) ./ den(idx_den_nonzero);
+
+        % Límite cuando t -> +/- 1/(4*f_delta) => valor es pi/4
+        idx_den_zero = find(abs(den) <= epsilon);
+        term2(idx_den_zero) = pi/4;
+
+        he = 2 * f0 * term1 .* term2;
+    end
+
+    plot(t / Ts, he, 'LineWidth', 1.5); % Graficar contra t/Ts para ver múltiplos del periodo de símbolo
+    legends_imp{end+1} = ['\alpha = ' num2str(alpha)];
+end
+
+title('Respuesta al Impulso h_e(t) (Coseno Alzado)');
+xlabel('Tiempo (t / T_s)');
+ylabel('Amplitud h_e(t)');
+grid on;
+legend(legends_imp);
+xlim([min(t/Ts), max(t/Ts)]); % Ajustar límites si es necesario
+ylim([-0.5, 2.2]); % Ajustar límites Y para mejor visualización
+% Marcar puntos de muestreo ideales (donde debería ser cero excepto en t=0)
+stem(0:1:max(t/Ts), zeros(1, floor(max(t/Ts))+1), 'k', 'filled', 'MarkerSize', 4, 'LineStyle', 'none', 'HandleVisibility' , 'off');
+hold off;
+
+% Ajustar layout
+sgtitle('Pulso Coseno Alzado de Nyquist (f_0 = 1)'); % Título general
+
+
+%% Actividad 1 Laboratorio
+% Definición de parámetros
+num_bits = 10^4;           % Número de bits
+Rs = 1e3;                  % Tasa de símbolos (1 kHz)
+sps = 8;                   % Muestras por símbolo
+Fs = Rs * sps;             % Frecuencia de muestreo 
+alpha = 1;                 % Factor de roll-off 
+span = 10;                 % Span del filtro en símbolos
+snr_dB = 20;               % Relación señal/ruido en dB
+
+% Generación de bits aleatorios
+bits = randi([0, 1], 1, num_bits);
+
+% Codificación NRZ-L 
+symbols = 2 * bits - 1;
+
+% Sobremuestreo (interpolación)
+symbolsUp = upsample(symbols, sps);
+
+% Crear y aplicar filtro Raised Cosine (coseno alzado)
+rrcFilter = rcosdesign(alpha, span, sps, 'normal');
+filteredSignal = filter(rrcFilter, 1, symbolsUp);
+
+% Calcular potencia de la señal para ajustar el nivel de ruido
+filteredSignalPower = sum(abs(filteredSignal).^2) / length(filteredSignal);
+noisePower = filteredSignalPower / (10^(snr_dB / 10));
+noise = sqrt(noisePower) * randn(size(filteredSignal));
+
+% Agregar ruido gaussiano blanco (AWGN)
+receivedSignal = filteredSignal + noise;
+
+% Crear vector de tiempo para graficar la señal
+t_signal = (0:length(receivedSignal)-1) / Fs;  % Renombrado de 't' para evitar conflicto con la pre-actividad
+
+figure;
+eyediagram(receivedSignal, 2 * sps);  % Dos símbolos por ventana de ojo
+title(['Diagrama de ojo para pulso coseno alzado (\alpha = ' num2str(alpha) ')']);
+xlabel('Tiempo');
+ylabel('Amplitud');
